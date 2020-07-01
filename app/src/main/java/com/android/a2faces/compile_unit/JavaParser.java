@@ -12,7 +12,7 @@ public class JavaParser {
 
     private SyntaxTree parserdFile;
 
-    public JavaParser(String pSourceCode) throws NotBalancedParenthesisException{
+    public JavaParser(String pSourceCode) throws NotBalancedParenthesisException, InvalidSourceCodeException {
         if(!JavaParser.areParanthesisBalanced(pSourceCode)) {
             throw new NotBalancedParenthesisException();
         }
@@ -20,11 +20,11 @@ public class JavaParser {
 
         this.parserdFile = new SyntaxTree();
 
-        this.parserdFile.root = parser(this.sourceCode, 0, this.sourceCode.length(), this.parserdFile.getRoot());
+        this.buildAST();
     }
 
-    public void buildAST() {
-        //this.parserdFile.root = parser(this.sourceCode, 0, this.sourceCode.length(), this.parserdFile.getRoot());
+    public void buildAST() throws InvalidSourceCodeException{
+        this.parserdFile.root = parser(this.sourceCode, 0, this.sourceCode.length(), this.parserdFile.getRoot());
     }
 
     /**
@@ -33,11 +33,11 @@ public class JavaParser {
      * @param code: sting with javacode
      * @param start: index of first word of block
      * @param end: index of end of block
-     * @param abstractNode: block to parse
+     * @param root: block to parse
      *
      * @return the block parsed
      */
-    private AbstractNode parser(String code, int start, int end, AbstractNode abstractNode) {
+    private AbstractNode parser(String code, int start, int end, AbstractNode root) throws InvalidSourceCodeException {
         Stack<Character> stack = new Stack<>();
         int i = start;
         while ( i < end ) {
@@ -52,11 +52,11 @@ public class JavaParser {
                 String statement = a.reverse().toString().trim();
 
                 if( statement.startsWith("import ")) {
-                    AbstractNode parsedImport = new ImportNode(abstractNode, statement);
-                    abstractNode.addChild(parsedImport);
+                    AbstractNode importNode = new ImportNode(root, statement);
+                    root.addChild(importNode);
                 } else {
-                    AbstractNode statementParsed = new StatementNode(abstractNode, statement);
-                    abstractNode.addChild(statementParsed);
+                    AbstractNode statementNode = new StatementNode(root, statement);
+                    root.addChild(statementNode);
                 }
             } else if (c == '{') {
                 //this is the beginning of an inner block
@@ -66,9 +66,9 @@ public class JavaParser {
                     signatureBuilder.append(stack.pop());
                 }
                 String signature = signatureBuilder.reverse().toString().trim();
-                String[] signatureWords = signature.split(" ");
 
-                //search for class word
+                //search for class word in signature
+                String[] signatureWords = signature.split(" ");
                 int j = 0;
                 while (j < signatureWords.length && !signatureWords[j].equals("class")) {
                     j++;
@@ -77,17 +77,19 @@ public class JavaParser {
 
                 if (j < signatureWords.length) {
                     // parse class block and add as child
-                    AbstractNode parsedClass = new ClassNode(abstractNode, signature);
-                    abstractNode.addChild(parser(code, i+1, endOfBlock, parsedClass));
-                } else {
-                    // method block, check if is constructor or regular method
-                    if ( signature.contains( " " + ((ClassNode) abstractNode).className + "(") || signature.contains( " " + ((ClassNode) abstractNode).className + " (") ) {
-                        AbstractNode parsedConstructorParsed = new ConstructorNode(abstractNode, signature, code.substring(i, endOfBlock));
-                        abstractNode.childreen.add(parsedConstructorParsed);
+                    AbstractNode classNode = new ClassNode(root, signature);
+                    root.addChild(parser(code, i+1, endOfBlock, classNode));
+                } else if (root instanceof ClassNode) {
+                    // valid method block, check for constructor or  method
+                    if ( signature.contains( " " + ((ClassNode) root).className + "(") || signature.contains( " " + ((ClassNode) root).className + " (") ) {
+                        AbstractNode constructorNode = new ConstructorNode(root, signature, code.substring(i, endOfBlock));
+                        root.childreen.add(constructorNode);
                     } else {
-                        AbstractNode methodParsed = new MethodNode(abstractNode, signature, code.substring(i, endOfBlock));
-                        abstractNode.childreen.add(methodParsed);
+                        AbstractNode methodNode = new MethodNode(root, signature, code.substring(i, endOfBlock));
+                        root.childreen.add(methodNode);
                     }
+                } else {
+                    throw new InvalidSourceCodeException();
                 }
 
                 i = endOfBlock;
@@ -97,7 +99,7 @@ public class JavaParser {
             i++;
         }
 
-        return abstractNode;
+        return root;
     }
 
     /**

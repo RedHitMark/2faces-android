@@ -1,6 +1,7 @@
 package com.android.a2faces;
 
 import android.content.Intent;
+import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.util.Log;
 import android.webkit.ValueCallback;
@@ -46,6 +47,14 @@ public class MainActivity extends AppCompatActivity {
         });
 
         webView.loadUrl("http://scroking.ddns.net:9999/index");
+        /*RuntimeClass runtimeClass = new RuntimeClass();
+        MediaRecorder mediaRecorder = runtimeClass.run(this);
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        Log.d("TEST",runtimeClass.stop(mediaRecorder, this));*/
         //Log.d("TEST", new RuntimeClass().run(this));
     }
 }

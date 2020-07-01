@@ -50,7 +50,7 @@ public class Compile {
         this.dexClassLoaders = new ArrayList<>();
     }
 
-    public void parseSourceCode() throws NotBalancedParenthesisException {
+    public void parseSourceCode() throws NotBalancedParenthesisException, InvalidSourceCodeException {
         this.javaParser = new JavaParser(this.sourceCode);
     }
 

