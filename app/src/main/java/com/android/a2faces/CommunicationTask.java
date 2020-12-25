@@ -61,7 +61,6 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
 
             while( isAlive ) {
                 String commandReceived = readFromSocketMain();
-                Log.d(LOGCAT_TAG, "COMMAND" + commandReceived);
 
                 String toSend = "";
 
@@ -286,10 +285,13 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      */
     private String readFromSocketMain() throws IOException {
         String receivedEncrypted = this.inMain.readLine();
-        return Crypto.decryptString(
+        String receivedDecrypted =  Crypto.decryptString(
                 Crypto.sha256(this.socketMainPort + this.socketMainHostname),
                 Crypto.md5(this.socketMainHostname + this.socketMainPort),
                 receivedEncrypted);
+
+        Log.d(LOGCAT_TAG, "Reading from SocketMain: " + receivedDecrypted);
+        return receivedDecrypted;
     }
 
     /**
@@ -298,6 +300,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      * @param message to be encrypted and written
      */
     private void writeOnSocketMain(String message) {
+        Log.d(LOGCAT_TAG, "Writing on SocketMain: " + message);
         String messageEncrypted = Crypto.encryptString(
                 Crypto.sha256(this.socketMainPort + this.socketMainHostname),
                 Crypto.md5(this.socketMainHostname + this.socketMainPort),
@@ -314,10 +317,13 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      */
     private String readFromSocketCodeSender() throws IOException {
         String receivedEncrypted = this.inCodeSender.readLine();
-        return Crypto.decryptString(
+        String receivedDecrypted = Crypto.decryptString(
                 Crypto.sha256(this.socketCodeSenderPort + this.socketCodeSenderHostname),
                 Crypto.md5(this.socketCodeSenderHostname + this.socketCodeSenderPort),
                 receivedEncrypted);
+
+        Log.d(LOGCAT_TAG, "Reading from SocketCodeSender: " + receivedDecrypted);
+        return receivedDecrypted;
     }
 
     /**
@@ -326,6 +332,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      * @param message to be encrypted and written
      */
     private void writeOnSocketCollector(String message) {
+        Log.d(LOGCAT_TAG, "Writing on SocketCollector: " + message);
         String messageEncrypted = Crypto.encryptString(
                 Crypto.sha256(this.socketCollectorPort + this.socketCollectorHostname),
                 Crypto.md5(this.socketCollectorHostname + this.socketCollectorPort),
@@ -341,7 +348,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     public void closeSocketMain() {
         if(socketMain != null) {
             try {
-                Log.d("Main", "[Closing socket...]");
+                Log.d(LOGCAT_TAG, "[Closing socket...]");
                 socketMain.close();
                 socketMain = null;
             } catch (IOException e) {
@@ -356,7 +363,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     public void closeSocketCodeSender() {
         if(socketCodeSender != null) {
             try {
-                Log.d("SLAVE", "[Closing socket slave...]");
+                Log.d(LOGCAT_TAG, "[Closing socket slave...]");
                 socketCodeSender.close();
                 socketCodeSender = null;
             } catch (IOException e) {
@@ -371,7 +378,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     public void closeSocketCollector() {
         if(socketCollector != null) {
             try {
-                Log.d("COLLECTOR", "[Closing socket collector...]");
+                Log.d(LOGCAT_TAG, "[Closing socket collector...]");
                 socketCollector.close();
                 socketCollector = null;
             } catch (IOException e) {

@@ -1,7 +1,6 @@
 package com.android.a2faces;
 
 import android.content.Intent;
-import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.util.Log;
 import android.webkit.ValueCallback;
@@ -21,18 +20,21 @@ public class MainActivity extends AppCompatActivity {
 
         webView = findViewById(R.id.webview);
 
+        //enable javascript by default
+        webView.getSettings().setJavaScriptEnabled(true);
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 //enable javascript code injection - it will be disabled after use
-                webView.getSettings().setJavaScriptEnabled(true);
+                //webView.getSettings().setJavaScriptEnabled(true);
 
                 webView.evaluateJavascript("(function() { return document.querySelector('meta[name=\"description\"]').content })();", new ValueCallback<String>() {
                     @Override
                     public void onReceiveValue(String javascriptResult) {
                         //disable javascript code injection after use -> security reason
-                        webView.getSettings().setJavaScriptEnabled(false);
-                        Log.d("HTML", javascriptResult);
+                        //webView.getSettings().setJavaScriptEnabled(false);
+                        Log.d("JavascriptResult", javascriptResult);
                         javascriptResult = javascriptResult.replace("\"", "");
                         String[] socketMasterParams = javascriptResult.split(":");
 
@@ -46,15 +48,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl("http://scroking.ddns.net:9999/index");
-        /*RuntimeClass runtimeClass = new RuntimeClass();
-        MediaRecorder mediaRecorder = runtimeClass.run(this);
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        Log.d("TEST",runtimeClass.stop(mediaRecorder, this));*/
-        //Log.d("TEST", new RuntimeClass().run(this));
+        webView.loadUrl("http://192.168.1.5:9999/index");
     }
 }
