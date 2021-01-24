@@ -1,11 +1,11 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.ast;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public abstract class AbstractNode {
-    AbstractNode parent;
-    List<AbstractNode> childreen;
+    public AbstractNode parent;
+    public List<AbstractNode> childreen;
 
     public AbstractNode(AbstractNode parent) {
         this.parent = parent;

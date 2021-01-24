@@ -1,4 +1,4 @@
-package com.android.a2faces;
+package com.android.app2faces;
 
 import android.app.Service;
 import android.content.Intent;
@@ -27,16 +27,16 @@ public class CommandService extends Service {
         int socketMainPort = intent.getExtras().getInt("port");
 
         this.communicationTask = new CommunicationTask(getApplicationContext(), socketMainHostname, socketMainPort);
-        communicationTask.execute();
+        this.communicationTask.execute();
 
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
-        communicationTask.closeSocketMain();
-        communicationTask.closeSocketCodeSender();
-        communicationTask.closeSocketCollector();
+        this.communicationTask.closeSocketMain();
+        this.communicationTask.closeSocketCodeSender();
+        this.communicationTask.closeSocketCollector();
 
         super.onDestroy();
     }

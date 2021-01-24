@@ -1,4 +1,4 @@
-package com.android.a2faces;
+package com.android.app2faces;
 
 import android.content.Context;
 

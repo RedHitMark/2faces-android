@@ -1,10 +1,10 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.ast;
 
 public class ImportNode extends AbstractNode {
     public static final String IMPORT_KEY_WORD = "import ";
 
-    String packagePath;
-    String packageName;
+    public String packagePath;
+    public String packageName;
 
     /**
      *

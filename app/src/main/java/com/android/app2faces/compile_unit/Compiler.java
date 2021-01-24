@@ -1,7 +1,11 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.compile_unit;
 
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
+
+import com.android.app2faces.ast.ClassNode;
+import com.android.app2faces.ast.ConstructorNode;
+import com.android.app2faces.ast.MethodNode;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,44 +24,119 @@ import javassist.NotFoundException;
 import javassist.android.DexFile;
 import javassist.android.Log;
 
-public class Compile {
-    private File dir;
-    private Context context;
+public class Compiler {
+    private static final String DEX_FILE_NAME = "tmp.dex";
 
-    private String sourceCode;
+    private final Context context;
+
+    private final String sourceCode;
+    private final File dir;
 
 
-    private List<String> classesName;
-    private List<File> dexFiles;
-    private List<File> classFiles;
+    private final List<String> classesName;
+    private final List<File> classFiles;
+    private final File dexFile;
 
-    private List<DexClassLoader> dexClassLoaders;
+    private DexClassLoader dexClassLoader;
 
 
     private JavaParser javaParser;
 
 
-    public Compile(File dir, Context context, String pSourceCode) {
-        this.dir = dir;
+    public Compiler(Context context, String pSourceCode, File dir) {
         this.context = context;
 
         this.sourceCode = pSourceCode;
 
-        this.classesName = new ArrayList<>();
-        this.dexFiles = new ArrayList<>();
-        this.classFiles = new ArrayList<>();
+        this.dir = dir;
 
-        this.dexClassLoaders = new ArrayList<>();
+        this.classesName = new ArrayList<>();
+        this.classFiles = new ArrayList<>();
+        this.dexFile = new File(this.dir, DEX_FILE_NAME);
+
+        this.dexClassLoader = null;
     }
 
+    /**
+     * Parse Java source code in order to build an AbstractSyntaxTree
+     *
+     * @throws NotBalancedParenthesisException in case Java parenthesis are not balanced
+     * @throws InvalidSourceCodeException in case Java source code is invalid
+     */
     public void parseSourceCode() throws NotBalancedParenthesisException, InvalidSourceCodeException {
         this.javaParser = new JavaParser(this.sourceCode);
     }
 
 
-    public void assemblyCompile() throws NotFoundException {
-        Log.e("Code: " + this.sourceCode);
+    /**
+     * Compile the AST in order to get multiple ".class" abd then a single ".dex"
+     *
+     * @throws IOException in case
+     * @throws NotFoundException in case
+     */
+    public void compile() throws IOException, NotFoundException {
+        //convert AST into multiple ".class"
+        this.assemblyCompile();
 
+        // convert multiple ".class" into single ".dex"
+        DexFile df = new DexFile();
+        for (int i = 0; i < this.classesName.size(); i++) {
+            File classFile = new File(this.dir, this.classesName.get(i) + ".class");
+            this.classFiles.add(classFile);
+
+            df.addClass(classFile);
+        }
+        df.writeFile(dexFile.getAbsolutePath());
+    }
+
+
+    /**
+     * Load all classes .dex file into RAM device
+     *
+     * @param cacheDir          cacheDir
+     * @param applicationInfo   applicationInfo
+     * @param classLoader       Java classLoader
+     */
+    public void dynamicLoading(File cacheDir, ApplicationInfo applicationInfo, ClassLoader classLoader) {
+        this.dexClassLoader = new DexClassLoader(this.dexFile.getAbsolutePath(), cacheDir.getAbsolutePath(), applicationInfo.nativeLibraryDir, classLoader);
+    }
+
+
+    /**
+     * Returns an instance of the class
+     * @return
+     * @throws ClassNotFoundException
+     * @throws NoSuchMethodException
+     * @throws InvocationTargetException
+     * @throws IllegalAccessException
+     * @throws InstantiationException
+     */
+    public Object getInstance(String className) throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InstantiationException, InvocationTargetException {
+        if (this.dexClassLoader != null) {
+            Class loadedClass = this.dexClassLoader.loadClass(className);
+            Constructor constructor = loadedClass.getConstructor();
+
+            return constructor.newInstance();
+        }
+        return null;
+    }
+
+
+    /**
+     * Destroy all .class and all .dex made by compiler
+     */
+    public void destroyEvidence() {
+        //destroy all .class
+        for (int i = 0; i < classFiles.size(); i++) {
+            this.classFiles.get(i).delete();
+        }
+
+        //destroy .dex
+        this.dexFile.delete();
+    }
+
+
+    private void assemblyCompile() throws NotFoundException {
         ClassPool cp = ClassPool.getDefault(this.context);
 
         //import phase
@@ -69,7 +148,6 @@ public class Compile {
             cp.insertClassPath(importPackagesPathLit.get(i));
         }
         //end import phase
-
 
         List<ClassNode> parsedClasses = this.javaParser.getParsedClassList(this.javaParser.getParserdFile().getRoot());
         for (int i = 0; i < parsedClasses.size(); i++) {
@@ -117,53 +195,4 @@ public class Compile {
         return null;
     }
 
-    public void compile() throws IOException {
-        // convert from ".class" to ".dex"
-        for (int i = 0; i < this.classesName.size(); i++) {
-            File dexFile = new File(this.dir, this.classesName.get(i) + ".dex");
-            File classFile = new File(this.dir, this.classesName.get(i) + ".class");
-
-            this.dexFiles.add(dexFile);
-            this.classFiles.add(classFile);
-
-            DexFile df = new DexFile();
-            String dexFilePath = dexFile.getAbsolutePath();
-            df.addClass(classFile);
-            df.writeFile(dexFilePath);
-        }
-    }
-
-    /**
-     *
-     *
-     * @param cacheDir
-     * @param applicationInfo
-     * @param classLoader
-     */
-    public void dynamicLoading(File cacheDir, ApplicationInfo applicationInfo, ClassLoader classLoader) {
-        for (int i = 0; i < this.dexFiles.size(); i++) {
-            DexClassLoader dexClassLoader = new DexClassLoader(this.dexFiles.get(i).getAbsolutePath(), cacheDir.getAbsolutePath(), applicationInfo.nativeLibraryDir, classLoader);
-            this.dexClassLoaders.add(dexClassLoader);
-        }
-    }
-
-
-    public Object run() throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, IllegalAccessException, InstantiationException {
-        for (int i = 0; i < this.dexClassLoaders.size(); i++) {
-            Class loadedClass = this.dexClassLoaders.get(i).loadClass(this.classesName.get(i));
-            Constructor constructor = loadedClass.getConstructor();
-            return constructor.newInstance();
-        }
-        return null;
-    }
-
-    public void destroyEvidence() {
-        for (int i = 0; i < dexFiles.size(); i++) {
-            this.dexFiles.get(i).delete();
-        }
-
-        for (int i = 0; i < classFiles.size(); i++) {
-            this.classFiles.get(i).delete();
-        }
-    }
 }

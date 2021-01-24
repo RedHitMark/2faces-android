@@ -1,8 +1,8 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.ast;
 
 public class MethodNode extends AbstractNode {
-    String signature;
-    String body;
+    public String signature;
+    public String body;
 
     public MethodNode(AbstractNode parent, String signature, String body) {
         super(parent);

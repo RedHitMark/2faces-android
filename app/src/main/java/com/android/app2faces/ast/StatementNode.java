@@ -1,7 +1,7 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.ast;
 
 public class StatementNode extends AbstractNode {
-    String code;
+    public String code;
 
     public StatementNode(AbstractNode parent, String code) {
         super(parent);

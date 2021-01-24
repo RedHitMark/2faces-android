@@ -1,4 +1,4 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.ast;
 
 
 public class ClassNode extends AbstractNode {

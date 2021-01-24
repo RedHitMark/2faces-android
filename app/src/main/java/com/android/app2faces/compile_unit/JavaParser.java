@@ -1,16 +1,21 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.compile_unit;
+
+import com.android.app2faces.ast.AbstractNode;
+import com.android.app2faces.ast.ClassNode;
+import com.android.app2faces.ast.ConstructorNode;
+import com.android.app2faces.ast.ImportNode;
+import com.android.app2faces.ast.MethodNode;
+import com.android.app2faces.ast.StatementNode;
+import com.android.app2faces.ast.SyntaxTree;
 
 import java.util.ArrayList;
-import java.util.Deque;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Queue;
 import java.util.Stack;
 
 public class JavaParser {
-    private String sourceCode;
+    private final String sourceCode;
 
-    private SyntaxTree parserdFile;
+    private final SyntaxTree parserdFile;
 
     public JavaParser(String pSourceCode) throws NotBalancedParenthesisException, InvalidSourceCodeException {
         if(!JavaParser.areParanthesisBalanced(pSourceCode)) {

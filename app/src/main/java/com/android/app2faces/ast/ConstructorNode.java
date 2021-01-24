@@ -1,4 +1,4 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.ast;
 
 public class ConstructorNode extends AbstractNode {
     public String signature;

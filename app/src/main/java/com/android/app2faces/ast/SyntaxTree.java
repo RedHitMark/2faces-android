@@ -1,7 +1,7 @@
-package com.android.a2faces.compile_unit;
+package com.android.app2faces.ast;
 
 public class SyntaxTree {
-    AbstractNode root;
+    public AbstractNode root;
 
     public SyntaxTree() {
         this.root = new RootNode();
